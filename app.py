@@ -325,6 +325,7 @@ def main():
                                             if original_hash:
                                                 verified = verify_stl_signature(signature, original_hash, public_key)
                                             else:
+                                                st.error("❌ STL file is missing the original hash metadata required for verification.")
                                                 verified = False
                                         else:
                                             lines = obj_data.split('\n')

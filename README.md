@@ -1,6 +1,6 @@
 # 3D-Model-Auth
 
-A robust tool for embedding and verifying digital signatures in `.obj` 3D model files using advanced steganography. Protect your 3D assets from piracy and unauthorized modifications using RSA cryptography and vertex-level steganographic techniques. This tool supports multiple artist identities, allowing creators to securely sign their work with unique digital signatures that can be verified later.
+A robust tool for embedding and verifying digital signatures in `.obj` and `.stl` 3D model files using advanced steganography. Protect your 3D assets from piracy and unauthorized modifications using RSA cryptography and vertex-level steganographic techniques. This tool supports multiple artist identities, allowing creators to securely sign their work with unique digital signatures that can be verified later.
 
 ## Features
 
@@ -17,7 +17,7 @@ A robust tool for embedding and verifying digital signatures in `.obj` 3D model 
 - **Interactive UI**: Streamlit-based interface for managing artists, signing, and verifying models.
 - **Modern 3D Viewer**: Black background, white static models (no auto-spin), and enhanced lighting for maximum clarity and contrast.
 - **Database-Backed**: Artist profiles and keys are securely stored in a local SQLite database.
-- **Modular Codebase**: Clean separation of concerns with `utils/crypto.py`, `utils/ga_mlsb.py`, `utils/database.py`, and `utils/viewer.py`.
+- **Modular Codebase**: Clean separation of concerns with `utils/crypto.py`, `utils/stl_crypto.py`, `utils/ga_mlsb.py`, `utils/database.py`, and `utils/viewer.py`.
 
 ## Tech Stack
 
@@ -46,10 +46,11 @@ A robust tool for embedding and verifying digital signatures in `.obj` 3D model 
 3d-model-auth/
 ├── app.py                # Main Streamlit app
 ├── utils/
-│   ├── crypto.py         # Standard LSB steganography and RSA signatures
+│   ├── crypto.py         # Standard LSB steganography and RSA signatures (OBJ)
+│   ├── stl_crypto.py     # STL file parser (ASCII + binary) and LSB steganography
 │   ├── ga_mlsb.py        # GA-MLSB geometry-aware steganography (NEW!)
 │   ├── database.py       # Database setup and artist management
-│   └── viewer.py         # 3D model viewer (Three.js via Streamlit)
+│   └── viewer.py         # 3D model viewer (Three.js via Streamlit, OBJ + STL)
 ├── data/                 # SQLite DB and uploaded files (auto-created)
 ├── .gitignore            # Ignores __pycache__ and other artifacts
 ├── requirements.txt      # Python dependencies
@@ -111,14 +112,14 @@ streamlit run app.py
 ### Sign a 3D Model
 
 1. Select an artist from your artist profiles.
-2. Upload your `.obj` file.
+2. Upload your `.obj` or `.stl` file.
 3. Click **Sign and Download** to generate and embed a digital signature using steganography.
 4. The signature will include both authentication data and artist information.
 5. Download the signed file for secure sharing.
 
 ### Verify a Signed 3D Model
 
-1. Upload a signed `.obj` file.
+1. Upload a signed `.obj` or `.stl` file.
 2. Click **Verify Signature** to check authenticity.
 3. The system will display the embedded artist information (name, email, website).
 4. You'll see whether the file is authentic and who created it.
@@ -134,7 +135,8 @@ streamlit run app.py
 
 ## File Format Compatibility
 
-- Currently supports `.obj` files. Future updates will include other formats like `.fbx` and `.stl`.
+- **`.obj` files**: Full support with multiple steganography methods (Standard LSB, Optimized LSB, LSB+1, MLSB, PVD-LSB, Curvature-LSB).
+- **`.stl` files**: Supported for signing and verification. Both ASCII and binary STL formats are handled. Uses LSB steganography on vertex z-coordinates.
 
 ## Use Cases
 

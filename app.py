@@ -9,7 +9,7 @@ from utils.database import setup_database, load_artists_from_db, save_artist_to_
 from utils.crypto import generate_keys, load_key_from_pem, generate_signature, embed_signature, extract_signature, verify_signature
 from utils.stego_methods import LSBPlus1, MLSB, MLSBPVD, CurvatureLSB
 from utils.optimized_lsb import OptimizedLSB
-from utils.stl_crypto import embed_signature_stl, extract_signature_stl
+from utils.stl_crypto import embed_signature_stl, extract_signature_stl, verify_stl_signature
 from utils.evaluation_metrics import ComprehensiveEvaluator
 import pandas as pd
 import time
@@ -320,7 +320,12 @@ def main():
                                     if artist_data.get('name') == artist_info.get('name'):
                                         public_key = load_key_from_pem(artist_data['public_key'].encode(), is_private=False)
                                         if is_stl:
-                                            verified = verify_signature(raw_bytes, signature, public_key)
+                                            # STL: verify using the stored original hash since
+                                            # the signed file has modified vertex coordinates.
+                                            if original_hash:
+                                                verified = verify_stl_signature(signature, original_hash, public_key)
+                                            else:
+                                                verified = False
                                         else:
                                             lines = obj_data.split('\n')
                                             unsigned_lines = [line for line in lines 

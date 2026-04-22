@@ -86,15 +86,15 @@ def _parse_binary_stl(data: bytes) -> Tuple[bytes, int, List[dict]]:
     offset = 84
 
     for _ in range(num_triangles):
-        nx, ny, nz = struct.unpack_from("<fff", data, offset)
+        nx, ny, nz = struct.unpack_from("<fff", core, offset)
         offset += 12
-        v1 = struct.unpack_from("<fff", data, offset)
+        v1 = struct.unpack_from("<fff", core, offset)
         offset += 12
-        v2 = struct.unpack_from("<fff", data, offset)
+        v2 = struct.unpack_from("<fff", core, offset)
         offset += 12
-        v3 = struct.unpack_from("<fff", data, offset)
+        v3 = struct.unpack_from("<fff", core, offset)
         offset += 12
-        attr = struct.unpack_from("<H", data, offset)[0]
+        attr = struct.unpack_from("<H", core, offset)[0]
         offset += 2
 
         triangles.append({
@@ -371,3 +371,40 @@ def extract_signature_stl(stl_data: bytes) -> Tuple[
         sig_bytes.append(byte_val)
 
     return sig_bytes.hex(), original_hash, artist_info
+
+
+def verify_stl_signature(signature_hex: str, original_hash_hex: str,
+                         public_key) -> bool:
+    """Verify an STL signature using the stored original file hash.
+
+    Because the signed STL file has modified vertex z-coordinates (from LSB
+    embedding), we cannot simply re-hash the signed file.  Instead we use
+    the original file hash that was recorded during signing.
+
+    Args:
+        signature_hex: Hex-encoded RSA signature extracted from the STL file.
+        original_hash_hex: Hex digest of the original (pre-signing) STL data,
+                           as stored in the embedded metadata.
+        public_key: RSA public key object.
+
+    Returns:
+        True if the signature is valid, False otherwise.
+    """
+    from cryptography.hazmat.primitives.asymmetric import padding
+    from cryptography.hazmat.primitives import hashes
+
+    try:
+        signature_bytes = bytes.fromhex(signature_hex)
+        original_hash_bytes = bytes.fromhex(original_hash_hex)
+        public_key.verify(
+            signature_bytes,
+            original_hash_bytes,
+            padding.PSS(
+                mgf=padding.MGF1(hashes.SHA256()),
+                salt_length=padding.PSS.MAX_LENGTH,
+            ),
+            hashes.SHA256(),
+        )
+        return True
+    except Exception:
+        return False

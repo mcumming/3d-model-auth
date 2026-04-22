@@ -9,6 +9,7 @@ from utils.database import setup_database, load_artists_from_db, save_artist_to_
 from utils.crypto import generate_keys, load_key_from_pem, generate_signature, embed_signature, extract_signature, verify_signature
 from utils.stego_methods import LSBPlus1, MLSB, MLSBPVD, CurvatureLSB
 from utils.optimized_lsb import OptimizedLSB
+from utils.stl_crypto import embed_signature_stl, extract_signature_stl
 from utils.evaluation_metrics import ComprehensiveEvaluator
 import pandas as pd
 import time
@@ -19,7 +20,7 @@ import numpy as np
 def main():
     st.set_page_config(page_title="3D Model Digital Signature Tool", page_icon="��", layout="centered")
     st.title("🔏 3D Model Digital Signature Tool")
-    st.caption("Digitally sign and verify 3D model (.obj) files with ease and confidence.")
+    st.caption("Digitally sign and verify 3D model (.obj and .stl) files with ease and confidence.")
     
     # Setup database connection
     conn = setup_database()
@@ -145,103 +146,158 @@ def main():
             
             st.markdown("""
             **How to sign your 3D model:**
-            1. Upload your `.obj` file below
+            1. Upload your `.obj` or `.stl` file below
             2. Choose your embedding method
             3. Click **Sign and Download**
             """)
             
-        uploaded_file = st.file_uploader("Upload a 3D Model (.obj) file", type=["obj"], key="sign-upload")
+        uploaded_file = st.file_uploader("Upload a 3D Model (.obj or .stl) file", type=["obj", "stl"], key="sign-upload")
         if uploaded_file:
             if not st.session_state['current_artist'] or st.session_state['current_artist'] not in st.session_state['artist_registry']:
                 st.error("Please select an artist before signing.")
             else:
-                obj_data = uploaded_file.read().decode("utf-8")
-                st.markdown(f"**File:** `{uploaded_file.name}` ({uploaded_file.size} bytes)")
-                
-                st.markdown("### 🎨 3D Model Preview")
-                render_3d_model(obj_data, height=400)
+                file_ext = uploaded_file.name.rsplit(".", 1)[-1].lower() if "." in uploaded_file.name else ""
+                is_stl = file_ext == "stl"
+                raw_bytes = uploaded_file.read()
+
+                if is_stl:
+                    st.markdown(f"**File:** `{uploaded_file.name}` ({uploaded_file.size} bytes) — STL format")
+                    st.markdown("### 🎨 3D Model Preview")
+                    render_3d_model(raw_bytes, height=400, file_format="stl")
+                else:
+                    obj_data = raw_bytes.decode("utf-8")
+                    st.markdown(f"**File:** `{uploaded_file.name}` ({uploaded_file.size} bytes)")
+                    st.markdown("### 🎨 3D Model Preview")
+                    render_3d_model(obj_data, height=400)
                 
                 sign_btn = st.button("🖊️ Sign and Download", key="sign-btn", use_container_width=True)
                 if sign_btn:
                     with st.spinner("🔏 Embedding signature..."):
-                        # Check if already signed
-                        signature, _, existing_artist = extract_signature(obj_data)
-                        if not signature:
-                            opt = OptimizedLSB()
-                            ext_sig, _, ext_artist = opt.extract(obj_data)
+                        if is_stl:
+                            # --- STL signing path ---
+                            # Check if already signed
+                            ext_sig, _, existing_artist = extract_signature_stl(raw_bytes)
                             if ext_sig:
-                                signature = ext_sig
-                                existing_artist = ext_artist
-                        
-                        if signature:
-                            st.error(f"🚫 This model is already signed by: **{existing_artist.get('name', 'Unknown') if existing_artist else 'Unknown'}**")
-                            return
-                        
-                        current_artist = st.session_state['artist_registry'][st.session_state['current_artist']]
-                        private_key = load_key_from_pem(current_artist['private_key'].encode(), is_private=True)
-                        
-                        artist_embed_info = {
-                            "name": current_artist['name'],
-                            "email": current_artist['email'],
-                            "website": current_artist['website'],
-                            "timestamp": datetime.now().isoformat()
-                        }
-                        
-                        # Clean file
-                        clean_lines = [line for line in obj_data.split('\n') 
-                                      if not line.startswith("# Digital Signature:") 
-                                      and not "embedded" in line.lower()]
-                        clean_obj_data = '\n'.join(clean_lines)
-                        if obj_data.endswith('\n'):
-                            clean_obj_data += '\n'
-                        
-                        signature = generate_signature(clean_obj_data.encode(), private_key)
-                        
-                        if method == "Optimized LSB (Recommended)":
-                            opt = OptimizedLSB()
-                            signed_obj_data = opt.embed(clean_obj_data, signature, artist_embed_info)
-                            method_badge = "🎯 Optimized LSB"
+                                st.error(f"🚫 This model is already signed by: **{existing_artist.get('name', 'Unknown') if existing_artist else 'Unknown'}**")
+                                return
+
+                            current_artist = st.session_state['artist_registry'][st.session_state['current_artist']]
+                            private_key = load_key_from_pem(current_artist['private_key'].encode(), is_private=True)
+
+                            artist_embed_info = {
+                                "name": current_artist['name'],
+                                "email": current_artist['email'],
+                                "website": current_artist['website'],
+                                "timestamp": datetime.now().isoformat()
+                            }
+
+                            signature = generate_signature(raw_bytes, private_key)
+                            signed_stl_data = embed_signature_stl(raw_bytes, signature, artist_embed_info)
+
+                            st.success("✅ File signed successfully using **STL LSB Steganography**!")
+                            st.markdown("**Digital Signature:**")
+                            st.markdown(f'<div class="signature-box">{signature}</div>', unsafe_allow_html=True)
+
+                            st.download_button(
+                                label="⬇️ Download Signed File",
+                                data=signed_stl_data,
+                                file_name=f"signed_{uploaded_file.name}",
+                                mime="application/octet-stream",
+                                key="signed-download"
+                            )
                         else:
-                            signed_obj_data = embed_signature(clean_obj_data, signature, artist_embed_info)
-                            method_badge = "📊 Standard LSB"
-                        
-                        st.success(f"✅ File signed successfully using **{method_badge}**!")
-                        st.markdown("**Digital Signature:**")
-                        st.markdown(f'<div class="signature-box">{signature}</div>', unsafe_allow_html=True)
-                        
-                        st.download_button(
-                            label="⬇️ Download Signed File",
-                            data=signed_obj_data,
-                            file_name=f"signed_{uploaded_file.name}",
-                            mime="text/plain",
-                            key="signed-download"
-                        )
+                            # --- OBJ signing path (existing logic) ---
+                            # Check if already signed
+                            signature, _, existing_artist = extract_signature(obj_data)
+                            if not signature:
+                                opt = OptimizedLSB()
+                                ext_sig, _, ext_artist = opt.extract(obj_data)
+                                if ext_sig:
+                                    signature = ext_sig
+                                    existing_artist = ext_artist
+                            
+                            if signature:
+                                st.error(f"🚫 This model is already signed by: **{existing_artist.get('name', 'Unknown') if existing_artist else 'Unknown'}**")
+                                return
+                            
+                            current_artist = st.session_state['artist_registry'][st.session_state['current_artist']]
+                            private_key = load_key_from_pem(current_artist['private_key'].encode(), is_private=True)
+                            
+                            artist_embed_info = {
+                                "name": current_artist['name'],
+                                "email": current_artist['email'],
+                                "website": current_artist['website'],
+                                "timestamp": datetime.now().isoformat()
+                            }
+                            
+                            # Clean file
+                            clean_lines = [line for line in obj_data.split('\n') 
+                                          if not line.startswith("# Digital Signature:") 
+                                          and not "embedded" in line.lower()]
+                            clean_obj_data = '\n'.join(clean_lines)
+                            if obj_data.endswith('\n'):
+                                clean_obj_data += '\n'
+                            
+                            signature = generate_signature(clean_obj_data.encode(), private_key)
+                            
+                            if method == "Optimized LSB (Recommended)":
+                                opt = OptimizedLSB()
+                                signed_obj_data = opt.embed(clean_obj_data, signature, artist_embed_info)
+                                method_badge = "🎯 Optimized LSB"
+                            else:
+                                signed_obj_data = embed_signature(clean_obj_data, signature, artist_embed_info)
+                                method_badge = "📊 Standard LSB"
+                            
+                            st.success(f"✅ File signed successfully using **{method_badge}**!")
+                            st.markdown("**Digital Signature:**")
+                            st.markdown(f'<div class="signature-box">{signature}</div>', unsafe_allow_html=True)
+                            
+                            st.download_button(
+                                label="⬇️ Download Signed File",
+                                data=signed_obj_data,
+                                file_name=f"signed_{uploaded_file.name}",
+                                mime="text/plain",
+                                key="signed-download"
+                            )
         else:
-            st.info("Upload a .obj file to enable signing.")
+            st.info("Upload a .obj or .stl file to enable signing.")
 
     with tab3:
         st.header("�� Verify Signature")
         st.markdown("Upload a signed 3D model to verify its authenticity and view artist information.")
         
-        uploaded_file = st.file_uploader("Upload a Signed 3D Model (.obj) file", type=["obj"], key="verify-upload")
+        uploaded_file = st.file_uploader("Upload a Signed 3D Model (.obj or .stl) file", type=["obj", "stl"], key="verify-upload")
         if uploaded_file:
-            obj_data = uploaded_file.read().decode("utf-8")
-            st.markdown(f"**File:** `{uploaded_file.name}` ({uploaded_file.size} bytes)")
-            
-            st.markdown("### 🎨 3D Model Preview")
-            render_3d_model(obj_data, height=400)
+            file_ext = uploaded_file.name.rsplit(".", 1)[-1].lower() if "." in uploaded_file.name else ""
+            is_stl = file_ext == "stl"
+            raw_bytes = uploaded_file.read()
+
+            if is_stl:
+                st.markdown(f"**File:** `{uploaded_file.name}` ({uploaded_file.size} bytes) — STL format")
+                st.markdown("### 🎨 3D Model Preview")
+                render_3d_model(raw_bytes, height=400, file_format="stl")
+            else:
+                obj_data = raw_bytes.decode("utf-8")
+                st.markdown(f"**File:** `{uploaded_file.name}` ({uploaded_file.size} bytes)")
+                st.markdown("### 🎨 3D Model Preview")
+                render_3d_model(obj_data, height=400)
             
             verify_btn = st.button("🔎 Verify Signature", key="verify-btn", use_container_width=True)
             if verify_btn:
                 with st.spinner("🔎 Extracting and verifying..."):
-                    # Try different extraction methods
-                    signature, original_hash, artist_info = extract_signature(obj_data)
-                    method_used = "Standard LSB"
-                    
-                    if not signature:
-                        opt = OptimizedLSB()
-                        signature, original_hash, artist_info = opt.extract(obj_data)
-                        method_used = "Optimized LSB"
+                    if is_stl:
+                        # --- STL verification path ---
+                        signature, original_hash, artist_info = extract_signature_stl(raw_bytes)
+                        method_used = "STL LSB Steganography"
+                    else:
+                        # --- OBJ verification path ---
+                        signature, original_hash, artist_info = extract_signature(obj_data)
+                        method_used = "Standard LSB"
+                        
+                        if not signature:
+                            opt = OptimizedLSB()
+                            signature, original_hash, artist_info = opt.extract(obj_data)
+                            method_used = "Optimized LSB"
                     
                     if signature:
                         st.markdown("**Extracted Signature:**")
@@ -258,20 +314,22 @@ def main():
                             """)
                         
                         # Verify
-                        lines = obj_data.split('\n')
-                        unsigned_lines = [line for line in lines 
-                                        if not line.startswith("# Digital Signature:") 
-                                        and not "embedded" in line.lower()]
-                        unsigned_obj_data = '\n'.join(unsigned_lines)
-                        if obj_data.endswith('\n'):
-                            unsigned_obj_data += '\n'
-                        
                         try:
                             if artist_info:
                                 for artist_name, artist_data in st.session_state['artist_registry'].items():
                                     if artist_data.get('name') == artist_info.get('name'):
                                         public_key = load_key_from_pem(artist_data['public_key'].encode(), is_private=False)
-                                        verified = verify_signature(unsigned_obj_data.encode(), signature, public_key)
+                                        if is_stl:
+                                            verified = verify_signature(raw_bytes, signature, public_key)
+                                        else:
+                                            lines = obj_data.split('\n')
+                                            unsigned_lines = [line for line in lines 
+                                                            if not line.startswith("# Digital Signature:") 
+                                                            and not "embedded" in line.lower()]
+                                            unsigned_obj_data = '\n'.join(unsigned_lines)
+                                            if obj_data.endswith('\n'):
+                                                unsigned_obj_data += '\n'
+                                            verified = verify_signature(unsigned_obj_data.encode(), signature, public_key)
                                         if verified:
                                             st.success("✅ Signature verified successfully! The file is authentic.")
                                         else:
@@ -284,7 +342,7 @@ def main():
                     else:
                         st.warning("No digital signature found in the file.")
         else:
-            st.info("Upload a signed .obj file to enable verification.")
+            st.info("Upload a signed .obj or .stl file to enable verification.")
     
     with tab4:
         st.header("🔬 Test & Compare Methods")
